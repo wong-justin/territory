@@ -255,6 +255,3 @@ def test_store():
     back_to_old = t.store()
     
     print(old_values, new_values, back_to_old)
-    
-if __name__ == '__main__':
-    test_store()

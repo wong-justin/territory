@@ -737,6 +737,4 @@ def init():
     store_defaults() 
 
 
-init()     
-if __name__ == '__main__':
-    x = 1
+init()
