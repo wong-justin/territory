@@ -1,7 +1,7 @@
 ## Justin Wong
 ## testing and optimizing territory project
 
-import timeit
+from timeit import default_timer as timer
 import territory as t
 
 api_key = t.get_api_key()
@@ -10,57 +10,134 @@ api_key = t.get_api_key()
 ###    PERFORMANCE    ###
 #########################
 
-setup = """
-path = [(-81.203413903713241, 28.615474969803429),
+def time(func, *args, n=100000):
+    start = timer()
+    for _ in range(n):
+        func(*args)
+    end = timer()
+    print(end - start)
+    return end - start
+    
+def test_center_calculation_versions_time():
+    path = [(-81.203413903713241, 28.615474969803429),
         (-81.203368306159987, 28.612065472508572),
         (-81.204607486724868, 28.612065472508572),
         (-81.204639673233046, 28.6130638450546),
         (-81.2051546573639, 28.613365238675311),
         (-81.205181479454055, 28.615470260629358),
         (-81.203413903713241, 28.615474969803429)]
-path = [(x[1], x[0]) for x in path]
-path *= 2
+    path = [(x[1], x[0]) for x in path]
+    path *= 2
+    
+    def avg_2loops():
+    # quickest for large paths (like 14+ points)
+        center = ( sum((pt[0] for pt in path)) / len(path),
+                   sum((pt[1] for pt in path)) / len(path))
+        return center
+    
+    def avg_1loop_list():
+        sums = [0, 0]
+        for pt in path:
+            sums[0] += pt[0]
+            sums[1] += pt[1]
+        center = (sums[0] / len(sums),
+                  sums[1] / len(sums))
+        return center
 
-##########
-## Finding center of path
-##########
+    def avg_1loop_tuple():
+    # quickest for short paths (like 7 points)
+        sums = (0, 0)
+        for pt in path:
+            sums = (sums[0] + pt[0],
+                    sums[1] + pt[1])
+        center = (sums[0] / len(sums),
+                  sums[1] / len(sums))
+        return center
+    
+    time(avg_2loops)
+    time(avg_1loop_list)
+    time(avg_1loop_tuple)
 
-def avg_2loops():
-# quickest for large paths (like 14+ points)
-    center = ( sum((pt[0] for pt in path)) / len(path),
-               sum((pt[1] for pt in path)) / len(path))
-    return center
+def test_houses_search_versions_time():
+    terrs = t.get_territories()
+    t52 = terrs['Door to door'][52-1]
+    t52_boundary = t52[2]
 
-def avg_1loop_list():
-    sums = [0, 0]
-    for pt in path:
-        sums[0] += pt[0]
-        sums[1] += pt[1]
-    center = (sums[0] / len(sums),
-              sums[1] / len(sums))
-    return center
+    t1 = time(t.get_houses_in, t52_boundary, 'oviedo', n=2)
+    t2 = time(t.get_houses_in, t52_boundary, n=2)
+    print('v1:', t1)
+    print('v2:', t2)
 
-def avg_1loop_tuple():
-# quickest for short paths (like 7 points)
-    sums = (0, 0)
-    for pt in path:
-        sums = (sums[0] + pt[0],
-                sums[1] + pt[1])
-    center = (sums[0] / len(sums),
-              sums[1] / len(sums))
-    return center
-########
-"""
+def test_loop_vs_list_comp_time():
+    # results: about same timing
+    terrs = t.get_territories()
+    
+    def loop(data):
+        addresses = []
+        for addr, addr_details in data.items():
+            if t.is_point_inside(addr_details[2], t52_boundary):
+                addresses.append((addr, addr_details))
+        return addresses
 
-def test_center_calculation_versions_time():
-    t1 = timeit.Timer(stmt='avg_2loops()', setup=setup)
-    print(t1.timeit(100000))
+    def list_comp(data):
+        addresses = [(addr, v) for addr, v in data.items()
+                     if t.is_point_inside(v[2], t52_boundary)]
+        return addresses
+        
+    t52_boundary = terrs['Door to door'][52-1][2]
+    oviedo_data = t.open_town_data('oviedo')
+    
+    print('oviedo search (large)')
+    time(loop, oviedo_data, n=20)
+    time(list_comp, oviedo_data, n=20)
 
-    t2 = timeit.Timer(stmt='avg_1loop_list()', setup=setup)
-    print(t2.timeit(100000))
+    t110_boundary = terrs['Door to door'][110-1][2]
+    geneva_data = t.open_town_data('geneva')
 
-    t3 = timeit.Timer(stmt='avg_1loop_tuple()', setup=setup)
-    print(t3.timeit(100000))
+    print('geneva search (smaller)')
+    time(loop, geneva_data, n=150)
+    time(list_comp, geneva_data, n=150)
+
+def test_house_sorting_time():
+    oviedo = t.open_town_data('oviedo')
+    geneva = t.open_town_data('geneva')
+    chuluota = t.open_town_data('chuluota')
+    all_towns = {**oviedo, **geneva, **chuluota}
+    territories = t.get_territories()['Door to door']
+    town_data = {'oviedo': oviedo, 'geneva': geneva, 'chuluota': chuluota}
+    
+    def loop_terrs():
+        houses_in_each = []
+        for terr in territories:
+            houses_in_each.append(
+                [(addr, *details) for addr, details in all_towns.items()
+                 if t.is_point_inside(details[2], terr[2])])
+        return houses_in_each
+
+    def loop_houses():
+        houses_in_each = []
+        for addr, details in all_towns.items():
+            houses_in_each.append(
+                [(addr, *details) for terr in territories
+                 if t.is_point_inside(details[2], terr[2])])
+        return houses_in_each
+    
+    def loop_terrs_refine():
+        areas = ['oviedo']*52 + ['chuluota']*14 + ['oviedo']*21 + ['chuluota']*17 + ['geneva']*12 + ['oviedo']*3
+        houses_in_each = []
+        for terr in territories:
+            town_of_terr = areas[terr[1]-1]
+            data = town_data[town_of_terr]
+            houses_in_each.append(
+                [(addr, *details) for addr, details in data.items()
+                 if t.is_point_inside(details[2], terr[2])])
+        return houses_in_each
+    
+    time(loop_terrs, n=1)
+    time(loop_houses, n=1) 
+    time(loop_terrs_refine, n=1)
+
+    
 
 ###########################
 ###    FUNCTIONALITY    ###
@@ -133,5 +210,51 @@ def test_parcel_vs_latlng():
     l2 = (28.6820661, -81.16990489999999)
     t.parcel_vs_latlng(p1, p2, l1, l2)
 
+def get_addresses_in_territory():
+    terrs = t.get_territories()
+    t52 = terrs['Door to door'][52-1]
+    t52_boundary = t52[2]
 
-test_bounding_point_count()
+    oviedo_properties = t.open_oviedo_data()
+    addr_in_t52 = [i for i in oviedo_properties.values()
+                   if t.is_point_inside(i[2], t52_boundary)]
+    print(addr_in_t52)
+    print(len(addr_in_t52))
+    
+def test_open_town_data():
+    t.open_town_data('chuluota')
+
+def test_terr_from_town_data():
+    t.get_terr_from_towns()
+
+def test_get_streets():
+    town_data = t.open_town_data('chuluota')
+    t.get_streets_in(town_data)    
+
+def test_get_houses_in():
+    terrs = t.get_territories()
+    t52 = terrs['Door to door'][52-1]
+    t52_boundary = t52[2]
+
+    t.get_houses_in(t52_boundary, town='oviedo')
+    t.get_houses_in(t52_boundary, town='geneva')
+
+def test_sort_houses_into_territories():
+    t.sort_houses_into_territories()
+
+def test_store():
+    
+    print(type(t.store))
+    print(type(t.store.values))
+    print(t.store)
+    
+    old_values = t.store()
+    t.store((5, 7), 1, 'jpg', 'hybrid')
+    new_values = t.store()
+    t.store_defaults()
+    back_to_old = t.store()
+    
+    print(old_values, new_values, back_to_old)
+    
+if __name__ == '__main__':
+    test_store()

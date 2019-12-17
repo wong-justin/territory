@@ -1,5 +1,5 @@
 ## Justin Wong
-## google maps project
+## territory project
 ##
 ## some documentation used:
 ## https://developers.google.com/maps/documentation/maps-static/dev-guide
@@ -10,12 +10,6 @@ import json
 import random
 import math
 import point_in_polygon
-
-IMG_FORMAT = 'png'      # png (detail), jpg (compression), pr gif
-MAP_TYPE = 'roadmap'    # roadmap, satellite, or hybrid
-SCALE = 2               # 1 default, 2 for hi-res pixels (eg dpi, printing)
-IMG_SIZE = (500, 500)   # size of output image
-TERRITORY_TYPES = ('Apartment','Business','Door to door','Phone/Letter')
 
 def get_api_key():
     """
@@ -30,8 +24,6 @@ def get_api_key():
         api_key = file.readline()
         file.close()
     return api_key
-
-api_key = get_api_key()
 
 ##########################
 ###    CALCULATIONS    ###
@@ -320,6 +312,33 @@ def rev_geocoding_accuracy(addresses):
 ###    MAP PRODUCTION    ###
 ############################
 
+def store(*values):
+    """
+    Method (for outside callers) to set map parameters
+    
+    Usage (set): store(new_img_size, new_scale, new_img_format, new_map_type)
+    (get): params = store()
+    
+    
+    *values
+    img_size    [tuple]   (width, height) size of output image
+    scale       [int]     1, or 2 for hi-res pixels (eg dpi, printing)
+    img_format  [str]     'png' (detail), 'jpg' (compression), or 'gif'
+    map_type    [str]     'roadmap', 'satellite', or 'hybrid'
+    
+    # INPUT -----------
+    values    (setter) if params 
+    
+    # RETURN ----------
+    values    (getter) if no params
+    
+    """
+    store.values = values or store.values
+    return store.values
+
+def store_defaults():
+    store((500, 500), 2, 'png', 'roadmap')
+
 def map_img_center(api_key, center, zoom):
     """
     Returns an image of the map of an area around a location.
@@ -332,11 +351,8 @@ def map_img_center(api_key, center, zoom):
 
     # RETURN ----------
     img_data    [raw bytes?]
-    """
-    size = IMG_SIZE         
-    scale = SCALE           
-    img_format = IMG_FORMAT  
-    map_type = MAP_TYPE     
+    """  
+    size, scale, img_format, map_type = store()
     url = ('https://maps.googleapis.com/maps/api/staticmap?' +
            'style=feature:poi|visibility:off' +     # no businesses, markers
            '&center={}&zoom={}&size={}&scale={}&format={}&maptype={}&key={}'
@@ -372,10 +388,7 @@ def map_img_path(api_key, path):
     enc_path = polyline.encode(path)
     path_str = 'fillcolor:{}|enc:{}'.format(fill_color,
                                             enc_path)
-    size = IMG_SIZE         
-    scale = SCALE           
-    img_format = IMG_FORMAT  
-    map_type = MAP_TYPE     
+    size, scale, img_format, map_type = store()
     url = ('https://maps.googleapis.com/maps/api/staticmap?' +
            'style=feature:poi|visibility:off' + 
            '&path={}&size={}&scale={}&format={}&maptype={}&key={}'
@@ -405,10 +418,7 @@ def map_img_markers(api_key, markers):
     # RETURN ----------
     img_data    [raw bytes?]
     """
-    size = IMG_SIZE         
-    scale = SCALE           
-    img_format = IMG_FORMAT  
-    map_type = MAP_TYPE
+    size, scale, img_format, map_type = store()
     markers_str = '|'.join(
         ['{},{}'.format(pt[0], pt[1]) for pt in markers])
     url = ('https://maps.googleapis.com/maps/api/staticmap?' +
@@ -434,7 +444,7 @@ def maps_for_type(terr_type):
     Gets and saves images for all territories of given type.
 
     # INPUT -----------
-    terr_type    [str]  of TERRITORY_TYPES
+    terr_type    [str]
 
     # RETURN ----------
     """
@@ -468,7 +478,7 @@ def get_territories():
     """
     Returns territories from JSON export file from Territory Helper.
 
-    Output format: dict{terr_type[territories[name, num, coords]]}
+    Output format: dict{terr_type: [name, num, coords]]}
 
     # INPUT -----------
 
@@ -477,9 +487,6 @@ def get_territories():
     """
     with open('data/territories.json') as file:
         data = json.load(file)
-##        territories = {}
-##        for typ in TERRITORY_TYPES:
-##            territories[typ] = []
         territories = {'Apartment': [],
                        'Business': [],
                        'Door to door': [],
@@ -493,11 +500,12 @@ def get_territories():
                 # [...][0] because it's doubly nested by geojson format 
             coords = [(pt[1], pt[0]) for pt in coords]  # swap coords
 
-            territories[terr_type].append((name, num, coords))
+            #territories[terr_type].append((name, num, coords))
+            territories[terr_type].append([name, num, coords])
                 
         return territories
 
-def open_seminole_data():
+def open_county_data():
     """
     Opens json file that was downloaded from website:
     http://www.seminolecountyfl.gov/departments-services/information-services/gis-geographic-information-systems/gis-data.stml
@@ -508,50 +516,186 @@ def open_seminole_data():
     Used that CLI with the line:
     ogr2ogr -f "GeoJSON" <src_file.gdb> <destination_file.geojson>
     Renamed to .json file.
+
+    Cleaner data than property apprasiers data! But no latlng, so this dataset
+    will not be used much.
+    ~160,000 items
     
+    # INPUT -----------
+    # RETURN ----------
+    seminole_parcels   [dict] {[short_addr]:(full_addr, parcel, parcel_coords)}
     """
     with open('data/seminole_data.json') as file:
         data = json.load(file)
-        
-    print(data['features'])
-    for feature in data['features']:
-        parcel = feature['properties']['PARCEL']        
-        address = feature['properties']['ADDRESS']
-        city = feature['properties']['CITY']
-        zip_code = feature['properties']['ZIP']
-        coords = feature['geometry']['coordinates']
-##        if address == '827 DAKOTA PRAIRIE CT':
-##            print(feature)
+
+        seminole_parcels = {}
+        print(data['features'][0])  # see example structure
+        for feature in data['features']:
+            parcel = feature['properties']['PARCEL']        
+            short_addr = feature['properties']['ADDRESS']
+            city = feature['properties']['CITY']
+            zip_code = feature['properties']['ZIP']
+            full_addr = '{} {}, FL {}'.format(short_addr, city, zip_code)
+            parcel_coords = feature['geometry']['coordinates']
+            seminole_parcels[short_addr] = (full_addr, parcel, parcel_coords)
+
+        print('addresses/parcels in seminole', len(seminole_parcels))
+        return seminole_parcels
             
-def open_oviedo_data():
+def open_town_data(town='oviedo'):
     """
     Opens json features file downloaded from this website:
     https://maps2.scpafl.org/SCPAExternal/?query=PARCELS;PARCEL;2621315KR00000730
 
-    Searched 'oviedo' in address box and 24770 results appeared.
+    Searched 'oviedo' or 'geneva' or 'chuluota' in address box
+    and 24770/3381/3622 results appeared.
     Clicked 'load more' until all were loaded, then
     options menu -> export as features (json) file.
+
+    Lots of data errors makes this dataset hard to clean.
+    But lat/lng is the most reliable data here, accurate virtually every time,
+    because this is from the property appraiser.
+        Sometimes ADD2 is outside Oviedo, but [addr_1] matches up with latlng
+            in Oviedo and that is verified and acceptable.
+        Sometimes ADD2 is outside Oviedo, but [addr_1] is empty
+            so you have to go by latlng.
+        Sometimes ADD2 is correct address and [addr_1] is the road it's off of.
+        Sometimes ADD2 is correct but [addr_1] is the same only without number.
+        Sometimes ADD2 is correct and [addr_1] is empty.
+        Sometimes there's only a PO Box.
+        Sometimes ADD2 is a company like 1511 E STATE ROAD 434 STE 3001
+            and [addr_1] is empty.
+        Sometimes there's a mispelling ('LOOKWOOD'), but it's rarer.
+        Sometimes ADD2 is a suite (?) num (eg 'STE 115') and [addr_1] is empty.
+    Errors seem to be from data entry problems, misunderstandings or
+    lack of standard address rules. Many people don't know how to use ADD2!
+    Many corrupted addresses seem to have latlngs for undeveloped properties or
+    newly built homes (where the owner lives somewhere else or it's a company)
+
+    # INPUT -----------
+    town           [str]  <'oviedo', 'geneva', or 'chuluota'>
+    # RETURN ----------
+    in_territory   [dict] {[short_addr]:(addr2, full_addr, latlng)}
     """
-    with open('data/oviedo_features.json') as file:
+    with open('data/{}.json'.format(town)) as file:
         data = json.load(file)
         
-    sr434_lng = -81.208
     territory_boundary = territory_bounds()  
 
-    valid_terrs = []
+    properties_with_known_addr = {}
+    in_terr_but_weird_addr = {}
+    #print(data['features'][0]) # see example structure
     for feature in data['features']:
         latlng = (feature['attributes']['LAT'],
                   feature['attributes']['LON'])
-        short_addr = feature['attributes']['ADD2']
+        pad_num = feature['attributes']['PAD_NUM']
+        pad_dir = feature['attributes']['PAD_DIR']
+        pad_name = feature['attributes']['PAD_NAME']
+        pad_suffix = feature['attributes']['PAD_SUFFIX']
+        short_addr = ' '.join(
+            filter(None, (pad_num, pad_dir, pad_name, pad_suffix)))
+        addr_2 = feature['attributes']['ADD2']
         full_addr = feature['attributes']['SITEADDRESS'] # full except 'USA'
 
+        key, val = short_addr, (addr_2, full_addr, latlng)
+
         if is_point_inside(latlng, territory_boundary):
-            #print(short_addr, latlng)
-            valid_terrs.append((short_addr, latlng))
-##        else:
-##            print('NOPE', short_addr)
-    print(len(valid_terrs))
-    
+            if pad_num == '':
+                # address must be messed up; manually check
+                in_terr_but_weird_addr[key] = val
+            else:
+                # assume addr_1 having a number is correct
+                properties_with_known_addr[key] = val
+        else:
+            #print('not inside overall territory', short_addr)
+            pass
+    terr_in_town = {**in_terr_but_weird_addr, **properties_with_known_addr}
+##    print('properties w good address:', len(properties_with_known_addr))
+##    print('properties w bad address: ', len(in_terr_but_weird_addr))
+##    print('properties in this town in territory:', len(terr_in_town))
+##    print('properties in this town but not territory:',
+##          len(data['features']) - len(terr_in_town))
+    return terr_in_town
+
+def get_terr_from_towns():
+    """
+    Combines data from oviedo, geneva, chuluota.
+
+    # INPUT -----------
+    # RETURN ----------
+    terr_from_towns   [dict]   {[addr_str]: (addr_2, full_addr, latlng)}
+    """
+    oviedo = open_town_data('oviedo')
+    geneva = open_town_data('geneva')
+    chuluota = open_town_data('chuluota')
+    terr_from_towns = {**oviedo, **geneva, **chuluota}
+##    print('terrs in town:', len(terr_from_towns))
+##    print('random addr:', random.choice(list(terr_from_towns.items())))
+    return terr_from_towns
+
+def get_streets_in(town_data):
+    """
+    Returns sorted list of street names in given region, and num houses on each.
+
+    # INPUT -----------
+    town_data    [dict]    {[addr_str] : ...}
+
+    # RETURN ----------
+    street_names [list]    [(str, num_occurrences)]
+    """
+    street_names = {}
+    for addr in town_data.keys():
+        chunks = addr.split()
+        chunks = chunks[1:] # remove first part of address (the num)
+        street = ' '.join(chunks)
+        if street not in street_names:
+            street_names[street] = 1
+        else:
+            street_names[street] += 1
+    # order by most occurrences
+    street_names = sorted(list(street_names.items()), key=lambda x: x[1], reverse=True)
+    for street in street_names:
+        print(street, street_names.index(street))
+    return street_names
+
+def get_houses_in(path, town=None):
+    """
+    Finds addresses within given region.
+    Include optional param town (if known) to speed up the search.
+
+    # INPUT -----------
+    path        [list[tuple]]
+    town        [str]
+    # RETURN ----------
+    addresses   [list]
+    """
+    if town is None:
+        data = get_terr_from_towns()
+    else:
+        data = open_town_data(town)
+    addresses = [(addr, *v) for addr, v in data.items()
+                 if is_point_inside(v[2], path)]
+    print('num houses in region:', len(addresses))
+    return addresses
+
+def sort_houses_into_territories():
+    """
+    Finds all houses in each territory.
+
+    # INPUT -----------
+    # RETURN ----------
+    territories    [dict]   {types[name, num, path, addresses]}
+    """
+    terrs = get_territories()
+    #terrs = {key: list(val) for key, val in terrs.items()}  # change from immutable tuple
+    terrs = terrs['Door to door']
+    for terr in terrs:
+        path = terr[2]
+        print(terr[1])
+        addresses = get_houses_in(path)
+        terr.append(addresses)
+    return terrs
+        
 def territory_bounds():
     return [
         (28.670365, -81.208512),
@@ -580,6 +724,19 @@ def territory_bounds():
         (28.673564, -81.204406),
         (28.670365, -81.208512)] #included first again
 
+def write_terrs_with_addrs_to_file():
+    terrs = sort_houses_into_territories()
+    with open('terrs_with_addrs.json', 'w') as file:
+        json.dump(terrs, file)
 
+def init():
+    """
+    Get api key, set default map settings
+    """
+    api_key = get_api_key()
+    store_defaults() 
+
+
+init()     
 if __name__ == '__main__':
-    open_oviedo_data()
+    x = 1
