@@ -3,6 +3,7 @@
 
 from timeit import default_timer as timer
 import territory as t
+import json
 
 api_key = t.get_api_key()
 
@@ -171,9 +172,23 @@ def test_map_markers():
     t54 = territories['Door to door'][54-1]
     path = t54[2]
     points = t.points_inside(path)
-    img_data = t.map_img_markers(api_key, points)
-    t.save_img('t54_markers', img_data)
+    img_data = t.create_map(api_key, markers=points)
+    #img_data = t.map_img_markers(api_key, points)
+    t.save_img('t54_markers_new', img_data)
 
+def test_create_map():
+    center = None
+    zoom = 17
+    path = t.get_territories()['Door to door'][82-1][2]
+    path = None
+    markers = None
+    img_data = t.create_map(api_key, 
+                            center=center,
+                            zoom=zoom,
+                            path=path,
+                            markers=markers)
+    t.save_img('sample_new_map', img_data)
+    
 def test_maps_of_type():    
     t.maps_for_type('Apartment')
 
@@ -228,7 +243,7 @@ def test_terr_from_town_data():
     t.get_terr_from_towns()
 
 def test_get_streets():
-    town_data = t.open_town_data('chuluota')
+    town_data = t.get_all_town_data()
     t.get_streets_in(town_data)    
 
 def test_get_houses_in():
@@ -242,8 +257,7 @@ def test_get_houses_in():
 def test_sort_houses_into_territories():
     t.sort_houses_into_territories()
 
-def test_store():
-    
+def test_store():  
     print(type(t.store))
     print(type(t.store.values))
     print(t.store)
@@ -254,4 +268,7 @@ def test_store():
     t.store_defaults()
     back_to_old = t.store()
     
-    print(old_values, new_values, back_to_old)
+    print(old_values, new_values, back_to_old)    
+
+if __name__ == '__main__':
+    test_map_markers()
