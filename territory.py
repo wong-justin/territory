@@ -8,8 +8,7 @@ import requests
 import polyline
 import json
 import random
-import math
-import point_in_polygon
+import geometry as geo
 
 def get_api_key():
     """
@@ -25,158 +24,98 @@ def get_api_key():
         file.close()
     return api_key
 
-##########################
-###    CALCULATIONS    ###
-##########################
+###############################
+###    DATA & FORMATTING    ###
+###############################
 
-def dist(p1, p2):
+def address(short_addr, city, zip_code, latlng):
     """
-    Returns distances between two points.
-
-    # INPUT -----------
-    p1     [tuple]
-    p2     [tuple]
-
-    # RETURN ----------
-    d      [float]
-    """
-    return math.sqrt((p2[0] - p1[0]) ** 2 +
-                     (p2[1] - p1[1]) ** 2)
-
-def is_point_inside(pt, path):
-    """
-    Calls some person's point-in-polygon algorithm.
-
-    # INPUT -----------
-    pt     [tuple]
-    path   [list[tuple]]
-
-    # RETURN ----------
-    is_inside   [bool]
-    """
-    return point_in_polygon.cn_PnPoly(pt, path) == 1
-
-def points_inside(path):
-    """
-    Calculate points that will be checked for nearby addresses within given region.
-
-    Tries to optimize for least points necessary to still find all addresses,
-    in an effort to make the least API calls.
-
-    # INPUT -----------
-    path          [list]   [(lat, lng)]
-
-    # RETURN ----------
-    pts_inside    [list]   [(lat, lng)]
-    """
-    # try tiling as a grid
-    # or maybe use 1.5 or 2 times the average house distance since
-    #   each call usually returns multiple addresses anyways.
-
-    # or maybe make calls following streets in the neighborhood,
-    #   and it wouldn't be so random anymore
-
-    # or maybe use machine learning to predict where the best points would be
-    #   to find the most addresses,
-    #   eg it learns to place more densely for tight neighborhoods but sparser
-    #   for rural areas. Or it learns average house sizing. somehow learns how
-    #   to put points to reduce redundant results from Google's algorithm.    
-
-    increment = .0002
-
-    xvals = [pt[0] for pt in path]
-    yvals = [pt[1] for pt in path]
-    x0 = min(xvals)
-    y0 = min(yvals)
-    x_max = max(xvals)
-    y_max = max(yvals)
-    print('xdist bounds', x_max-x0, 'ydist bounds', y_max-y0)
-
-    pts_inside = []
+    A closure function to hold address data like a class.
     
-    # safe starting method: just choose like 7, 1 for the averaged center and
-    #   6 around the middle ring area between the center and the edges. who knows.
-    def ring_method():
-        def avg_center(path):
-            center = ( sum((pt[0] for pt in path)) / len(path),
-                       sum((pt[1] for pt in path)) / len(path))
-            return center
-        def pt_on_perimeter(path, angle):
-            # find point eminating from center thats on perimeter
-            return
-        center_pt = avg_center(path)
-        mid_ring_pts = []
-        num_pts_around = 6
-        for i in range(num_pts_around):
-            angle = (2 * math.pi) / num_pts_around
-            outer_pt = pt_on_perimeter(angle, path)
-            midpt = mdpt(center, outer_pt)
-            mid_ring_pts.append(midpt)    
-        return mid_ring_pts + center_pt
-
-    # easiest starting method: square grid
-    def square_tiling():        
-        x = x0
-        while x < x_max:
-            y = y0        
-            while y < y_max:
-                if is_point_inside((x, y), path):
-                    pts_inside.append((x, y))
-                #else:
-                    #print('not inside:', (x, y))
-                y += increment
-            x += increment
-        return pts_inside
-
-    def hexagon_tiling():
-        return 0
-
-    pts_inside = square_tiling()    # or ring_method() or
-                                    # whatever_nested_method()
-    return pts_inside
-
-def bounding_points_count():
-    """
-    Finds the number of points each territory is bounded by, then overall avg.
+    Usage:
+    
+    >> some_addr = address('21 some st', 'oviedo', 32766, (23.2222221, -81.3333332))
+    [...later on...]
+    >> some_addr()
+    >> ('21 SOME ST', 'OVIEDO', 32766, (23.222222, -81.333333))
+    >> some_addr()[0]
+    >> '21 SOME ST'
     
     # INPUT -----------
+    short_addr  [str]   '[number] [street name] [suffix]' 
+        * no punctuation on suffix
+    city        [str]
+    zip         [str]    doesn't support extra like 32765-8412
+    latlng      [tuple]  coordinates
     # RETURN ----------
+    lambda      [function]  returns formatted inputs
     """
-    
-    territories = get_territories()
-    all_coord_amounts = []
-    for each_terr_type, each_terr_list in territories.items():
-        this_type_coord_amounts = [len(terr[2]) for terr in each_terr_list]
-        all_coord_amounts += this_type_coord_amounts
-    print('list of num bounding points',
-          all_coord_amounts)
-    print('avg num bounding points',
-          sum(all_coord_amounts) / len(all_coord_amounts))
+    short_addr = short_addr.upper()
+    city = None if zip_code is None else city.upper()
+    zip_code = None if zip_code is None else int(zip_code)
+    latlng = shorten_latlng(latlng)
+    return lambda: (short_addr, city, zip_code, latlng)
 
-def parcel_vs_latlng(p1, p2, l1, l2):
+def shorten_latlng(pt):
     """
-    Compares seminole county parcel coords to global latlngs.
-    Appears that they are not consistent distance ratios.
+    Returns latlng pair rounded to 6 decimal places,
+    which is the max amount that Google will use.
+
+    # INPUT -----------
+    pt    [tuple]
+
+    # RETURN ----------
+    pt    [tuple]
+    """
+    return None if pt is None else (round(pt[0], 6), round(pt[1], 6))  
+
+def split_full_addr(full_addr):
+    """
+    Split up pieces of full address.
     
     # INPUT -----------
-    p1     [float]
-    p2     [float]
-    l1     [float]
-    l2     [float]
-
+    full_addr    [str]
+        *format: 1188 E Mitchell Hammock Rd, Oviedo, FL 32765, USA
     # RETURN ----------
+    short_addr
+    city
+    zip
     """
-    x_diff_parcel = p2[0] - p1[0]
-    x_diff_latlng = l2[0] - l1[0]
-    x_ratio = x_diff_parcel / x_diff_latlng
+    chunks = full_addr.split(',')
+    short_addr = chunks[0]
+    city = chunks[1].strip()
+    zip_chars = [c for c in chunks[2] if c.isdigit()]
+    zip_code = int(''.join(zip_chars))
+    return short_addr, city, zip_code    
+ 
+def territory_bounds():
+    return [
+        (28.670365, -81.208512),
+        (28.636491, -81.207935),
+        (28.633872, -81.207297),
+        (28.63094, -81.207883),
+        (28.611765, -81.207534),
+        (28.613597, -81.055922),
+        (28.648673, -81.030304),
+        (28.721254, -81.045243),
+        (28.778786, -81.078637),
+        (28.780479, -81.081234),
+        (28.774938, -81.086234),
+        (28.771082, -81.104056),
+        (28.770835, -81.112641),
+        (28.767232, -81.115673),
+        (28.758446, -81.115877),
+        (28.757974, -81.125327),
+        (28.780698, -81.168006),
+        (28.723094, -81.168017),
+        (28.684473, -81.167447),
+        (28.682734, -81.174349),
+        (28.677829, -81.183579),
+        (28.67704, -81.18888),
+        (28.676894, -81.199471),
+        (28.673564, -81.204406),
+        (28.670365, -81.208512)] #included first again
 
-    y_diff_parcel = p2[1] - p1[1]
-    y_diff_latlng = l2[1] - l1[1]
-    y_ratio = y_diff_parcel / y_diff_latlng
-
-    print(x_diff_parcel, x_diff_latlng, 'xratio', x_ratio)
-    print(y_diff_parcel, y_diff_latlng, 'yratio', y_ratio)
-    
 #######################
 ###    GEOCODING    ###
 #######################
@@ -216,10 +155,10 @@ def get_address(api_key, latlng):
 
     # INPUT -----------
     api_key     [str]
-    address     [tuple]   (lat, lng)
+    latlng      [tuple]   (lat, lng)
 
     # RETURN ----------
-    addresses   [list[tuple]]    (address_str, (lat,lng), place_id_str)
+    addresses   [list]
     """
     url = ('https://maps.googleapis.com/maps/api/geocode/json?' +
            'latlng={}&result_type=street_address&key={}'
@@ -230,25 +169,30 @@ def get_address(api_key, latlng):
         response = requests.get(url)
         resp_json_payload = response.json()
         results = resp_json_payload['results']
-        places = [(possible['formatted_address'],
-                   (possible['geometry']['location']['lat'],
-                    possible['geometry']['location']['lng']),
-                  possible['place_id'])
-                  for possible in results]
+        
+        addresses = []
+        for addr in results:
+            short_addr, city, zip_code = split_full_addr(
+            addr['formatted_address'])
+            coords = (addr['geometry']['location']['lat'], 
+                      addr['geometry']['location']['lng'])
+            this_addr = address(short_addr, city, zip_code, coords)
+            addresses.append(this_addr)
+
     except:
         print('ERROR: {}'.format(latlng))
-        places = None
-    return places
+        addresses = None
+    return addresses
 
 def get_addresses_in(api_key, path):
     """
     Warning! Method can consume many API calls quickly
     and cause charges to account.
     
-    Returns most if not all addresses within a given region.
+    Returns some real and fake addresses within a given region.
     
-    Pings around points within the region,
-    and keeps all unique addresses returned.
+    Pings around points within the region retrieved from 
+    geo.points_inside()
     
     # INPUT -----------
     api_key     [str]
@@ -259,7 +203,7 @@ def get_addresses_in(api_key, path):
     """
     safety_limit = 500     # API calls
     
-    coords_to_test = points_inside(path)
+    coords_to_test = geo.points_inside(path)
     if len(coords_to_test) > safety_limit:
         print('expensive amount of API calls; took first',
               safety_limit,
@@ -270,44 +214,31 @@ def get_addresses_in(api_key, path):
 
     for point in coords_to_test:
         addresses += get_address(api_key, point)
-
-    #addresses = [addr[0] for addr in addresses] # just names (strings)
-    old_length = len(addresses)
-    addresses = set(addresses)  # remove duplicates
-    print('duplicates removed:', old_length - len(addresses))
     return addresses
-
-def rev_geocoding_accuracy(addresses):
+    
+def remove_duplicates(addresses):
     """
-    Using any addresses, finds coordinates and then reverse geocode.
-    Compares results to how close it is to original address.
-    Appends results to text file.
-
+    Returns most if not all addresses within a given region.
+    
+    Pings around points within the region,
+    and keeps all unique addresses returned.
+    
     # INPUT -----------
-    addresses     [list[str]]    'num street, city, state zip, USA'
+    addresses   [list]
 
     # RETURN ----------
+    unique_addresses   [list]
     """
-    with open('rev_geocoding_results.txt', 'a+') as file:
-        for address in addresses:
-            latlng = get_lat_lng(api_key, address)
-            rev_addresses = get_address(api_key, latlng)
-            found_original = address in [rev_addr[0] for rev_addr in rev_addresses]
-            distances = [dist(latlng, rev_addr[1]) for rev_addr in rev_addresses]
-            avg_distance = sum(distances) / len(distances)
-            # format output #
-            s1 = address + ' - ' + str(latlng)
-            s2 = '\n'.join(['\t' + rev_addr[0] + ' - ' + str(rev_addr[1])
-                            for rev_addr in rev_addresses])
-            s3 = ''
-            s4 = '\t' + 'found original? ' + str(found_original)
-            s5 = '\t' + 'distances from original: ' + str(distances)
-            s6 = '\t' + 'avg distance: ' + str(avg_distance)
-            s7 = '\n'
-            lines = '\n'.join((s1, s2, s3, s4, s5, s6, s7))
-            print(lines)
-            file.write(lines)
-        
+    unique_addresses = {}
+    for addr in addresses:
+        if addr()[0] not in unique_addresses.keys():
+            unique_addresses[addr()[0]] = addr
+    old_length = len(addresses)
+    new_length = len(unique_addresses)
+    print('duplicates removed:', old_length - new_length)
+    print('unique addresses:', new_length)
+    return list(unique_addresses.values())
+    
 ############################
 ###    MAP PRODUCTION    ###
 ############################
@@ -337,105 +268,44 @@ def store(*values):
     return store.values
 
 def store_defaults():
-    store((500, 500), 2, 'png', 'roadmap')
+    default_size = (500, 500)
+    default_scale = 2
+    default_img_format = 'png'
+    default_map_type = 'roadmap'
+    store(default_size, 
+          default_scale, 
+          default_img_format, 
+          default_map_type)
 
-def map_img_center(api_key, center, zoom):
-    """
-    Returns an image of the map of an area around a location.
-    Input lat,lng point and zoom level
-
-    # INPUT -----------
-    api_key     [str]
-    center      [tuple]
-    zoom        [int]   1 (world) -> 15 (streets) -> 20 (buildings)
-
-    # RETURN ----------
-    img_data    [raw bytes?]
-    """  
+def create_map(api_key, center=None, zoom=None, path=None, markers=None):
     size, scale, img_format, map_type = store()
-    url = ('https://maps.googleapis.com/maps/api/staticmap?' +
-           'style=feature:poi|visibility:off' +     # no businesses, markers
-           '&center={}&zoom={}&size={}&scale={}&format={}&maptype={}&key={}'
-           .format('{},{}'.format(center[0], center[1]),
-                   zoom,
-                   '{}x{}'.format(size[0], size[1]),   
-                   scale,           
-                   img_format,       
-                   map_type,    
-                   api_key))
+    center_str = '' if center is None else '&center={},{}'.format(center[0], center[1])
+    zoom_str = '' if zoom is None else '&zoom={}'.format(zoom)
+    fill_color = '0xAA000033'
+    enc_path = None if path is None else polyline.encode(path) 
+    path_str = '' if path is None else '&path=fillcolor:{}|enc:{}'.format(fill_color, enc_path)
+    markers = None if markers is None else [shorten_latlng(m) for m in markers]
+    markers_str = '' if markers is None else '&markers=size:tiny|{}'.format('|'.join(
+        ['{},{}'.format(pt[0], pt[1]) for pt in markers]))
+    
+    api_base_str = 'https://maps.googleapis.com/maps/api/staticmap?'
+    no_poi_str = 'style=feature:poi|visibility:off'
+    
+    img_settings_str = '&size={}&scale={}&format={}&maptype={}&key={}'.format(
+        '{}x{}'.format(size[0], size[1]), 
+        scale,           
+        img_format,      
+        map_type,    
+        api_key)
+    url = api_base_str + no_poi_str + center_str + zoom_str + path_str + markers_str + img_settings_str
+    
     print(url)
+    
     try:
         response = requests.get(url)
         img_data = response.content
     except:
         print('ERROR: {}'.format(center))
-        img_data = None
-    return img_data
-
-def map_img_path(api_key, path):
-    """
-    Returns an image of the map of an area around a location.
-    Input list of lat,lng coordinates.
-
-    # INPUT -----------
-    api_key     [str]
-    path        [list]    [(lat,lng)]
-
-    # RETURN ----------
-    img_data    [raw bytes?]
-    """
-    fill_color = '0xAA000033'
-    enc_path = polyline.encode(path)
-    path_str = 'fillcolor:{}|enc:{}'.format(fill_color,
-                                            enc_path)
-    size, scale, img_format, map_type = store()
-    url = ('https://maps.googleapis.com/maps/api/staticmap?' +
-           'style=feature:poi|visibility:off' + 
-           '&path={}&size={}&scale={}&format={}&maptype={}&key={}'
-           .format(path_str,
-                   '{}x{}'.format(size[0], size[1]),   
-                   scale,           
-                   img_format,       
-                   map_type,    
-                   api_key))
-    print(url)
-    try:
-        response = requests.get(url)
-        img_data = response.content
-    except:
-        print('ERROR: {}'.format(path))
-        img_data = None
-    return img_data
-
-def map_img_markers(api_key, markers):
-    """
-    Returns an image of the map of an area given points.
-
-    # INPUT -----------
-    api_key     [str]
-    markers     [list]    [(lat,lng)]
-
-    # RETURN ----------
-    img_data    [raw bytes?]
-    """
-    size, scale, img_format, map_type = store()
-    markers_str = '|'.join(
-        ['{},{}'.format(pt[0], pt[1]) for pt in markers])
-    url = ('https://maps.googleapis.com/maps/api/staticmap?' +
-           'style=feature:poi|visibility:off' + 
-           '&markers=size:tiny|{}&size={}&scale={}&format={}&maptype={}&key={}'
-           .format(markers_str,
-                   '{}x{}'.format(size[0], size[1]),   
-                   scale,           
-                   img_format,       
-                   map_type,    
-                   api_key))
-    print(url)
-    try:
-        response = requests.get(url)
-        img_data = response.content
-    except:
-        print('ERROR: {}'.format(path))
         img_data = None
     return img_data
 
@@ -465,7 +335,8 @@ def save_img(name, content):
 
     # RETURN ----------
     """
-    with open(name + '.' + IMG_FORMAT, 'wb') as file:
+    img_format = store()[2]
+    with open(name + '.' + img_format, 'wb') as file:
         file.write(content)
         file.close()
     return
@@ -483,7 +354,7 @@ def get_territories():
     # INPUT -----------
 
     # RETURN ----------
-    territories  [dict] all{type[terrs[name, num, coords]]}
+    territories  [dict] {type[name, num, coords]}
     """
     with open('data/territories.json') as file:
         data = json.load(file)
@@ -504,7 +375,11 @@ def get_territories():
             territories[terr_type].append([name, num, coords])
                 
         return territories
-
+def get_dtd_territories():
+    with open('dtd_terrs_with_numhouses.json', 'r') as file:
+        data = json.load(file)
+        return data
+    
 def open_county_data():
     """
     Opens json file that was downloaded from website:
@@ -523,26 +398,31 @@ def open_county_data():
     
     # INPUT -----------
     # RETURN ----------
-    seminole_parcels   [dict] {[short_addr]:(full_addr, parcel, parcel_coords)}
+    addresses   [list]
     """
     with open('data/seminole_data.json') as file:
         data = json.load(file)
 
-        seminole_parcels = {}
+        addresses = []
         print(data['features'][0])  # see example structure
         for feature in data['features']:
-            parcel = feature['properties']['PARCEL']        
             short_addr = feature['properties']['ADDRESS']
             city = feature['properties']['CITY']
             zip_code = feature['properties']['ZIP']
-            full_addr = '{} {}, FL {}'.format(short_addr, city, zip_code)
-            parcel_coords = feature['geometry']['coordinates']
-            seminole_parcels[short_addr] = (full_addr, parcel, parcel_coords)
-
-        print('addresses/parcels in seminole', len(seminole_parcels))
-        return seminole_parcels
+            latlng = None   # parcel coords apparently doesn't convert to global latlng
             
-def open_town_data(town='oviedo'):
+            address_call = address(short_addr, city, zip_code, latlng)
+            addresses.append(address_call)
+            
+            # extra info in case needed later
+#            parcel = feature['properties']['PARCEL']
+#            parcel_coords = feature['geometry']['coordinates']
+#            full_addr = '{} {}, FL {}'.format(short_addr, city, zip_code)
+
+        print('addresses/parcels in seminole', len(addresses))
+        return addresses
+            
+def get_town_addresses(town='oviedo'):
     """
     Opens json features file downloaded from this website:
     https://maps2.scpafl.org/SCPAExternal/?query=PARCELS;PARCEL;2621315KR00000730
@@ -570,11 +450,63 @@ def open_town_data(town='oviedo'):
     Errors seem to be from data entry problems, misunderstandings or
     lack of standard address rules. Many people don't know how to use ADD2!
     Many corrupted addresses seem to have latlngs for undeveloped properties or
-    newly built homes (where the owner lives somewhere else or it's a company)
-
+    newly built homes (where the owner lives somewhere else or it's a company
+    
+    Example json feature:
+    
+    "attributes":{
+    "OBJECTID":165, 
+    "PARCEL":"2121325CF16000060", 
+    "PARCELTEXT":"21-21-32-5CF-1600-0060", 
+    "GIS_ACRES":0.25826515, 
+    "LAT":28.64588294, 
+    "LON":-81.12306277, 
+    "TD":"Unincorporated", 
+    "DORRes":"SINGLE FAMILY", 
+    "DORComm":"", 
+    "OWNER":"SOMEBODY'S NAME AND SOMEBODY ELSE", 
+    "FACILITY_NAME":"", 
+    "TOTAL_JUST_VALUE":95697, 
+    "BLDG_VALUE":44684,  
+    "EXFT_VALUE":800, 
+    "LAND_VALUE":50213, 
+    "SUB_NAME":"NORTH CHULUOTA", 
+    "YEAR_BLT":1958, 
+    "GROSS_AREA":1170, 
+    "BEDROOMS":1, 
+    "BATHROOMS":1, 
+    "DORVac":"", 
+    "OWNERADDRESS":"320 1ST ST CHULUOTA FL 32766", 
+    "SITEADDRESS":"320 1ST ST CHULUOTA, FL 32766", 
+    "PAT_SUB_ID":2170, 
+    "ASSESSED_VALUE":51493, 
+    "TAXABLE_VALUE":0, 
+    "EXEMPT_VALUE":51493, 
+    "TAXES":234.52, 
+    "LATEST_SALE_DATE":null, 
+    "LATEST_SALE_AMT":null, 
+    "PAD_NUM":"320", 
+    "PAD_DIR":"E", 
+    "PAD_NAME":"1ST", 
+    "PAD_SUFFIX":"ST", 
+    "PAD_CITY":"CHULUOTA", 
+    "PAD_STATE":"FL", 
+    "PAD_ZIP":"32766", 
+    "ADD2":"320 1ST ST", 
+    "CITY":"CHULUOTA", 
+    "STATE":"FL", 
+    "ZIP":"32766",
+    "LIVING_AREA":840}},
+    {"geometry":
+    {"rings":
+    [[[613469.0470155776,1566860.0192047432],[613394.0576642454,1566858.7619894072],[613391.4421839118,1567014.7639739886],[613466.431535244,1567016.0211893246],[613469.0470155776,1566860.0192047432]]],
+    "spatialReference":{"wkid":102658,"latestWkid":2236}}
+    
     # INPUT -----------
     town           [str]  <'oviedo', 'geneva', or 'chuluota'>
     # RETURN ----------
+    addresses      [list]
+    Outdated - 
     in_territory   [dict] {[short_addr]:(addr2, full_addr, latlng)}
     """
     with open('data/{}.json'.format(town)) as file:
@@ -582,42 +514,55 @@ def open_town_data(town='oviedo'):
         
     territory_boundary = territory_bounds()  
 
-    properties_with_known_addr = {}
-    in_terr_but_weird_addr = {}
-    #print(data['features'][0]) # see example structure
+#    properties_with_known_addr = {}
+#    in_terr_but_weird_addr = {}
+    
+    addresses = []
     for feature in data['features']:
-        latlng = (feature['attributes']['LAT'],
-                  feature['attributes']['LON'])
         pad_num = feature['attributes']['PAD_NUM']
         pad_dir = feature['attributes']['PAD_DIR']
         pad_name = feature['attributes']['PAD_NAME']
         pad_suffix = feature['attributes']['PAD_SUFFIX']
+        
         short_addr = ' '.join(
             filter(None, (pad_num, pad_dir, pad_name, pad_suffix)))
-        addr_2 = feature['attributes']['ADD2']
-        full_addr = feature['attributes']['SITEADDRESS'] # full except 'USA'
+        city = feature['attributes']['PAD_CITY']
+        zip_code = feature['attributes']['PAD_ZIP']
+        latlng = (feature['attributes']['LAT'],
+                  feature['attributes']['LON'])
+        
+        
+        
+        address_call = address(short_addr, city, zip_code, latlng)
+        addresses.append(address_call)
+        
+        # extra info in case need later
+#        addr_2 = feature['attributes']['ADD2'] # user input
+#        full_addr = feature['attributes']['SITEADDRESS'] # full except 'USA'
+        
+    return addresses
 
-        key, val = short_addr, (addr_2, full_addr, latlng)
-
-        if is_point_inside(latlng, territory_boundary):
-            if pad_num == '':
-                # address must be messed up; manually check
-                in_terr_but_weird_addr[key] = val
-            else:
-                # assume addr_1 having a number is correct
-                properties_with_known_addr[key] = val
-        else:
-            #print('not inside overall territory', short_addr)
-            pass
-    terr_in_town = {**in_terr_but_weird_addr, **properties_with_known_addr}
+#        key, val = short_addr, address_call
+#
+#        if geo.is_point_inside(latlng, territory_boundary):
+#            if pad_num == '':
+#                # address must be messed up; manually check
+#                in_terr_but_weird_addr[key] = val
+#            else:
+#                # assume addr_1 having a number is correct
+#                properties_with_known_addr[key] = val
+#        else:
+#            #print('not inside overall territory', short_addr)
+#            pass
+#    terr_in_town = {**in_terr_but_weird_addr, **properties_with_known_addr}
 ##    print('properties w good address:', len(properties_with_known_addr))
 ##    print('properties w bad address: ', len(in_terr_but_weird_addr))
 ##    print('properties in this town in territory:', len(terr_in_town))
 ##    print('properties in this town but not territory:',
 ##          len(data['features']) - len(terr_in_town))
-    return terr_in_town
+#    return terr_in_town
 
-def get_terr_from_towns():
+def get_all_towns_addresses():
     """
     Combines data from oviedo, geneva, chuluota.
 
@@ -625,37 +570,37 @@ def get_terr_from_towns():
     # RETURN ----------
     terr_from_towns   [dict]   {[addr_str]: (addr_2, full_addr, latlng)}
     """
-    oviedo = open_town_data('oviedo')
-    geneva = open_town_data('geneva')
-    chuluota = open_town_data('chuluota')
-    terr_from_towns = {**oviedo, **geneva, **chuluota}
+    oviedo = get_town_addresses('oviedo')
+    geneva = get_town_addresses('geneva')
+    chuluota = get_town_addresses('chuluota')
+    addresses = oviedo + geneva + chuluota
 ##    print('terrs in town:', len(terr_from_towns))
 ##    print('random addr:', random.choice(list(terr_from_towns.items())))
-    return terr_from_towns
+    return addresses
 
-def get_streets_in(town_data):
+def get_streets_in(addresses):
     """
-    Returns sorted list of street names in given region, and num houses on each.
+    Returns sorted list of street names in given list, and num houses on each.
 
     # INPUT -----------
-    town_data    [dict]    {[addr_str] : ...}
+    addresses    [list]
 
     # RETURN ----------
     street_names [list]    [(str, num_occurrences)]
     """
     street_names = {}
-    for addr in town_data.keys():
-        chunks = addr.split()
-        chunks = chunks[1:] # remove first part of address (the num)
+    for addr in addresses:
+        chunks = addr()[0].split()
+        chunks = chunks[1:] # remove first part of short address (the num)
         street = ' '.join(chunks)
         if street not in street_names:
             street_names[street] = 1
         else:
             street_names[street] += 1
-    # order by most occurrences
+    # now sort by most occurrences
     street_names = sorted(list(street_names.items()), key=lambda x: x[1], reverse=True)
     for street in street_names:
-        print(street, street_names.index(street))
+        print(street, street_names.index(street)+1)
     return street_names
 
 def get_houses_in(path, town=None):
@@ -670,11 +615,11 @@ def get_houses_in(path, town=None):
     addresses   [list]
     """
     if town is None:
-        data = get_terr_from_towns()
+        data = get_all_towns_addresses()
     else:
-        data = open_town_data(town)
-    addresses = [(addr, *v) for addr, v in data.items()
-                 if is_point_inside(v[2], path)]
+        data = get_town_addresses(town)
+    addresses = [addr for addr in data
+                 if geo.is_point_inside(addr()[3], path)]
     print('num houses in region:', len(addresses))
     return addresses
 
@@ -696,34 +641,6 @@ def sort_houses_into_territories():
         terr.append(addresses)
     return terrs
         
-def territory_bounds():
-    return [
-        (28.670365, -81.208512),
-        (28.636491, -81.207935),
-        (28.633872, -81.207297),
-        (28.63094, -81.207883),
-        (28.611765, -81.207534),
-        (28.613597, -81.055922),
-        (28.648673, -81.030304),
-        (28.721254, -81.045243),
-        (28.778786, -81.078637),
-        (28.780479, -81.081234),
-        (28.774938, -81.086234),
-        (28.771082, -81.104056),
-        (28.770835, -81.112641),
-        (28.767232, -81.115673),
-        (28.758446, -81.115877),
-        (28.757974, -81.125327),
-        (28.780698, -81.168006),
-        (28.723094, -81.168017),
-        (28.684473, -81.167447),
-        (28.682734, -81.174349),
-        (28.677829, -81.183579),
-        (28.67704, -81.18888),
-        (28.676894, -81.199471),
-        (28.673564, -81.204406),
-        (28.670365, -81.208512)] #included first again
-
 def write_terrs_with_addrs_to_file():
     terrs = sort_houses_into_territories()
     with open('terrs_with_addrs.json', 'w') as file:
@@ -735,6 +652,5 @@ def init():
     """
     api_key = get_api_key()
     store_defaults() 
-
 
 init()

@@ -4,13 +4,16 @@ Geolocation project using Google Maps API and local address data.
 - Regions and addresses are imported from exernal json files.
 - Maps generated using Google Maps.
 - Finds addresses in regions.
+    - Method 1 - pulling from local address data
+    - Method 2 - reverse geocoding from Google Maps
 
 Interactive web app uses [Streamlit](https://streamlit.io/).
-To view, 
 ```python
 pip install streamlit
-
-streamlit run https://raw.githubusercontent.com/wong-justin/territory/master/app.py
+```
+To view, download this repo and cd to the main folder `territory/`. Then:
+```python
+streamlit run app.py
 ```
 
-Thanks to open-source algorithm contributions from [polyline](https://pypi.org/project/polyline/) for implementing Google Maps' path encoding and [point-in-polygon](./point_in_polygon.py) for checking points within regions.
+Thanks to open-source algorithm contributions from [polyline](https://pypi.org/project/polyline/) for implementing Google Maps' path encoding and [point-in-polygon](./geometry.py) for checking points within regions.
