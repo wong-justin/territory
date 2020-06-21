@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Territory Looker Upper</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Lookups by geographic region">
+    <link id="favicon" rel="icon" href="https://glitch.com/edit/favicon-app.ico" type="image/x-icon">
+
+    <link rel="stylesheet" href="/public/style.css">
+
+  </head>
+  <body>
+    <header>
+      <h2>Find People in Territory</h2>
+    </header>
+
+    <main>
+      
+      <section id="extra">
+        <button id="show-instructions">Instructions</button>
+        <p id="loading">loading... ~5 secs / 100 results</p>
+        <button id="download">Download Spreadsheet</button>
+      </section>
+      
+      <div class="row">
+      <section>          
+        <form id="form">                   
+          <input type="text" name="requestKey" placeholder="request key" size="32" required>
+          <button id="sample-key" formnovalidate>Sample Request Key</button>
+          
+          <textarea name="headers" placeholder="headers" required></textarea>
+          <button id="sample-headers" formnovalidate>Sample Headers</button>
+
+          <textarea name="coords" placeholder="coordinates" required></textarea>
+          <button id="sample-coords" formnovalidate>Sample Coordinates</button>
+
+          <input type="submit" value="Submit Search">
+        </form>
+      </section>
+      
+      <section id="results">
+        <table id="items">
+          <th colspan="3">Results</th>
+        </table>
+      </section>
+      </div>
+      
+    </main>
+    
+    <div id="overlay">
+      <div id="tutorial-container">
+        <h3>About</h3>
+        <p>This is a tool to retrieve whitepages info by geographic area. You need a request key and headers copied from one manual session, and then you can supply coordinates of the vertices of a polygonal region for automated searches.</p>       
+        
+        <h3>Instructions</h3>
+        <p>Log in to Reference USA and click on US Standard Whitepages.</p>
+        <figure><a href="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep0_big.JPG?v=1587574590037">
+          <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep0_small.jpg?v=1587575852209" width="160" height="90"></a>
+          <figcaption>Home page once logged in</figcaption>
+        </figure>
+        <p>Copy the <strong>request key</strong> found at the end of the URL of the search page.</p>
+        <figure><a href="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep1_big.jpg?v=1587574598181">
+          <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep1_small.jpg?v=1587575857149" width="160" height="90"></a>
+          <figcaption>Request key in the URL bar at the top of the browser</figcaption>
+        </figure>
+        <p>With developer tools open (F12), make an arbitrary map search.</p>
+        <p>Find the AddShape HTTP request made by the website and copy the <strong>request headers</strong>.</p>
+        
+        <button class="collapsible">for Firefox...</button>
+        <div class="collapsible-content">
+          <figure><a href="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_firefox_big.JPG?v=1587574623605">
+            <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_firefox_small.JPG?v=1587575865073" width="160" height="90"></a>
+            <figcaption>Dev tools showing request in console</figcaption>
+          </figure>
+          <p>Look for an XHR POST with the url "http://www.referenceusa.com/UsWhitePages/MapSearch/AddShape". Toggle "Raw Headers" on and right click to copy message.</p>
+          <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_firefox_helper0.jpg?v=1587574627439">
+        </div>
+        <button class="collapsible">for Chrome...</button>
+        <div class="collapsible-content">
+          <figure><a href="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_chrome_big.JPG?v=1587574604007">
+            <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_chrome_small.jpg?v=1587575861231" width="160" height="90"></a>
+            <figcaption>Dev tools showing request in "Network" section</figcaption>
+          </figure>
+          <p>Look for a request named "Add Shape" in the Network section of the devtools. Be sure to "show more" to view the full content and "view source" to get the raw text before highlighting the text to copy.</p>
+          <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_chrome_helper0.jpg?v=1587575924183">
+          <img src="https://cdn.glitch.com/111e0d43-e9f7-4687-a722-e5f445cd0bf0%2Fstep2_chrome_helper1.jpg?v=1587574611338">
+        </div>
+        <p>Supply your own <strong>coordinates</strong> in longitude, latitude pairs (eg copied from GeoJson file).</p>
+        <p>Once the fields are filled out, submit and wait for results. Download as Excel spreadsheet if you want.</p>
+        
+        <h3>Notes</h3>
+        <ul>
+          <li>Request keys seem to last ~40 queries (1 query = 25 results) before you need a new one. Make a new search or go back to the home page to get a new key.</li>
+          <li>Queries take ~1 sec each, so be prepared to wait a bit for large territories.</li>
+          <li>Don't forget to exclude your DNCs!</li>
+          <li>New searches will clear results table and create new spreadsheet for download.</li>
+          <li>There may be a few missing results because of slight error in user-supplied coordinates, such as a house clipped off a corner of a street. Conversely, a few extraneous addresses may be present. It's a good idea to manually review and cross-reference with other address data to verify accuracy.</li>
+          <li>Some names are repeated, but that's not a big deal.</li>
+          <li>Headers will expire as authentication data/cookies expire. New ones should be generated eventually, but that hasn't been important yet. You can reuse the same headers for a long time.</li>     
+        </ul>
+        
+        <button id="close-instructions">Close Instructions</button>
+      </div>
+    </div>
+    <!-- include the Glitch button to show what the webpage is about and
+          to make it easier for folks to view source and remix -->
+    <div class="glitchButton" style="position:fixed;top:2em;right:20px;"></div>
+    <script src="https://button.glitch.me/button.js"></script>
+    <script src="/public/script.js"></script>
+  </body>
+</html>
